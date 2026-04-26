@@ -26,16 +26,20 @@ const CLEAN_DEAD_AFTER_MS = 45000;
 // ============ ROOM MANAGEMENT ============
 const rooms = new Map();   // roomId -> { id, players: Map(playerId -> playerState) }
 
+// Persistent counter for human-friendly room numbering (1, 2, 3...)
+let roomCounter = 0;
+
 function createRoom() {
+  roomCounter++;
   const id = 'room-' + crypto.randomBytes(3).toString('hex');
-  const room = { id, players: new Map(), createdAt: Date.now() };
+  const room = { id, num: roomCounter, players: new Map(), createdAt: Date.now() };
   rooms.set(id, room);
-  console.log(`[room] created ${id}`);
+  console.log(`[room] created ${id} (Room #${roomCounter})`);
   return room;
 }
 
 function findOrCreateRoom() {
-  // Find first room with available space
+  // Find first room with available space (in insertion order)
   for (const room of rooms.values()) {
     if (room.players.size < MAX_PLAYERS_PER_ROOM) return room;
   }
@@ -63,7 +67,13 @@ const server = http.createServer((req, res) => {
       rooms: rooms.size,
       players: [...rooms.values()].reduce((sum, r) => sum + r.players.size, 0),
       uptime_s: Math.floor(process.uptime()),
-    }));
+      roomDetails: [...rooms.values()].map(r => ({
+        num: r.num,
+        id: r.id,
+        players: r.players.size,
+        capacity: MAX_PLAYERS_PER_ROOM,
+      })),
+    }, null, 2));
     return;
   }
   res.writeHead(404);
@@ -96,6 +106,7 @@ wss.on('connection', (ws, req) => {
     type: 'welcome',
     you: playerId,
     room: room.id,
+    roomNum: room.num,
     capacity: MAX_PLAYERS_PER_ROOM,
     others: [...room.players.values()]
       .filter(p => p.id !== playerId)
